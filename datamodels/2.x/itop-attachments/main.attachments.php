@@ -239,16 +239,10 @@ class AttachmentPlugIn implements iApplicationUIExtension, iApplicationObjectExt
 		// Exit here if the class is not allowed
 		if (!$this->IsTargetObject($oObject)) return;
 
+		$sObjClass = get_class($oObject);
+		$iObjKey = $oObject->GetKey();
 		$iTransactionId = $oPage->GetTransactionId();
-		$bAttachmentsRenderIcons = appUserPreferences::GetPref('attachements_render_icons', true);
-		if ($bAttachmentsRenderIcons)
-		{
-			$oAttachmentsRenderer = new IconAttachmentsRenderer($oPage, $oObject, $iTransactionId);
-		}
-		else
-		{
-			$oAttachmentsRenderer = new TableDetailsAttachmentsRenderer($oPage, $oObject, $iTransactionId);
-		}
+		$oAttachmentsRenderer = AttachmentsRenderingFactory::GetInstance($oPage, $sObjClass, $iObjKey, $iTransactionId);
 
 		if ($this->GetAttachmentsPosition() === 'relations')
 		{
@@ -682,14 +676,13 @@ class CMDBChangeOpAttachmentRemoved extends CMDBChangeOp
 class AttachmentsHelper
 {
 	/**
-	 * @param \DBObject $oObject
+	 * @param string $sObjClass class name of the objects holding the attachments
+	 * @param int $iObjKey key of the objects holding the attachments
 	 *
 	 * @return array containing attachment_id as key and date as value
 	 */
-	public static function GetAttachmentsDateAddedFromDb($oObject)
+	public static function GetAttachmentsDateAddedFromDb($sObjClass, $iObjKey)
 	{
-		$sObjClass = get_class($oObject);
-		$iObjKey = $oObject->GetKey();
 		$sQuery = "SELECT CMDBChangeOpAttachmentAdded WHERE objclass='$sObjClass' AND objkey=$iObjKey";
 		try
 		{
@@ -721,15 +714,61 @@ class AttachmentsHelper
 }
 
 
+class AttachmentsRenderingFactory
+{
+	const ICONS_RENDERING_PREF_NAME = 'attachements_render_icons';
+
+	private function __construct()
+	{
+		// only static methods here :)
+	}
+
+	/**
+	 * @param \WebPage $oPage
+	 * @param string $sObjClass class name of the objects holding the attachments
+	 * @param int $iObjKey key of the objects holding the attachments
+	 * @param int $iTransactionId
+	 * @param bool $bAttachmentsRenderIcons
+	 *
+	 * @return \AbstractAttachmentsRendering rendering impl
+	 * @throws \OQLException
+	 */
+	public static function GetInstance($oPage, $sObjClass, $iObjKey, $iTransactionId, $bAttachmentsRenderIcons = null)
+	{
+		if ($bAttachmentsRenderIcons === null)
+		{
+			$bAttachmentsRenderIcons = self::GetRenderingPref();
+		}
+
+		if ($bAttachmentsRenderIcons)
+		{
+			return new IconAttachmentsRenderer($oPage, $sObjClass, $iObjKey, $iTransactionId);
+		}
+
+		return new TableDetailsAttachmentsRenderer($oPage, $sObjClass, $iObjKey, $iTransactionId);
+	}
+
+	/**
+	 * @return bool
+	 */
+	public static function GetRenderingPref()
+	{
+		return (bool)appUserPreferences::GetPref(self::ICONS_RENDERING_PREF_NAME, true);
+	}
+}
+
+
 /**
  * @see \AttachmentPlugIn::DisplayAttachments()
  */
 abstract class AbstractAttachmentsRendering
 {
-	/** @var \DBObject */
-	protected $oObject;
 	/** @var \WebPage */
 	protected $oPage;
+	/** @var string */
+	protected $sObjClass;
+	/** @var int */
+	protected $iObjKey;
 	/** @var \DBObjectSet */
 	protected $oTempAttachmentsSet;
 	/** @var \DBObjectSet */
@@ -737,21 +776,23 @@ abstract class AbstractAttachmentsRendering
 
 	/**
 	 * @param \WebPage $oPage
-	 * @param \DBObject $oObject
+	 * @param string $sObjClass class name of the objects holding the attachments
+	 * @param int $iObjKey key of the objects holding the attachments
 	 * @param int $iTransactionId
 	 *
 	 * @throws \OQLException
 	 */
-	public function __construct(\WebPage $oPage, \DBObject $oObject, $iTransactionId)
+	public function __construct(\WebPage $oPage, $sObjClass, $iObjKey, $iTransactionId)
 	{
-		$this->oObject = $oObject;
 		$this->oPage = $oPage;
+		$this->sObjClass = $sObjClass;
+		$this->iObjKey = $iObjKey;
 
-		$oSearch = DBObjectSearch::FromOQL("SELECT Attachment WHERE item_class = :class AND item_id = :item_id");
-		$this->oAttachmentsSet = new DBObjectSet($oSearch, array(), array('class' => get_class($oObject), 'item_id' => $oObject->GetKey()));
+		$oSearch = DBObjectSearch::FromOQL('SELECT Attachment WHERE item_class = :class AND item_id = :item_id');
+		$this->oAttachmentsSet = new DBObjectSet($oSearch, array(), array('class' => $sObjClass, 'item_id' => $iObjKey));
 
 		$sTempId = utils::GetUploadTempId($iTransactionId);
-		$oSearchTemp = DBObjectSearch::FromOQL("SELECT Attachment WHERE temp_id = :temp_id");
+		$oSearchTemp = DBObjectSearch::FromOQL('SELECT Attachment WHERE temp_id = :temp_id');
 		$this->oTempAttachmentsSet = new DBObjectSet($oSearchTemp, array(), array('temp_id' => $sTempId));
 	}
 
@@ -917,6 +958,7 @@ class IconAttachmentsRenderer extends AbstractAttachmentsRendering
 {
 	/**
 	 * @inheritDoc
+	 * @throws \Exception
 	 */
 	public function RenderEditAttachmentsList()
 	{
@@ -926,9 +968,8 @@ class IconAttachmentsRenderer extends AbstractAttachmentsRendering
 		$sTempId = utils::GetUploadTempId($iTransactionId);
 		$sIsDeleteEnabled = 'true'; // always true for the console !
 		// For portal, see sources/renderer/bootstrap/fieldrenderer/bsfileuploadfieldrenderer.class.inc.php
-		$sClass = get_class($this->oObject);
 		$this->oPage->add_script(
-			<<<EOF
+			<<<JS
 	function RemoveAttachment(att_id)
 	{
 		var bDelete = true;
@@ -944,7 +985,7 @@ class IconAttachmentsRenderer extends AbstractAttachmentsRendering
 		}
 		return false; // Do not submit the form !
 	}
-EOF
+JS
 		);
 		$this->oPage->add('<span id="attachments">');
 		while ($oAttachment = $this->oAttachmentsSet->Fetch())
@@ -984,7 +1025,7 @@ EOF
 		}
 
 		$this->oPage->add('</span>');
-		$this->AddUploadButton($sTempId, $sClass, $this->oObject->GetKey());
+		$this->AddUploadButton($sTempId, $this->sObjClass, $this->iObjKey);
 		$this->oPage->add_ready_script('$(".attachment").hover( function() {$(this).children(":button").toggleClass("btn_hidden"); } );');
 	}
 
@@ -1157,7 +1198,7 @@ CSS
 			);
 
 			$bIsEven = false;
-			$aAttachmentsDate = AttachmentsHelper::GetAttachmentsDateAddedFromDb($this->oObject);
+			$aAttachmentsDate = AttachmentsHelper::GetAttachmentsDateAddedFromDb($this->sObjClass, $this->iObjKey);
 			while ($oAttachment = $this->oAttachmentsSet->Fetch())
 			{
 				$sLineClass = '';
