@@ -32,12 +32,13 @@ require_once(APPROOT.'/application/ajaxwebpage.class.inc.php');
 /**
  * @param \ajax_page $oPage
  * @param $bAttachmentsRenderIcons
+ * @param int $iTransactionId
  *
  * @throws \ArchivedObjectException
  * @throws \CoreException
  * @throws \OQLException
  */
-function RenderAttachments(ajax_page $oPage, $bAttachmentsRenderIcons)
+function RenderAttachments(ajax_page $oPage, $bAttachmentsRenderIcons, $iTransactionId)
 {
 	$sClass = utils::ReadParam('objclass', '');
 	$sId = utils::ReadParam('objkey', '');
@@ -48,11 +49,11 @@ function RenderAttachments(ajax_page $oPage, $bAttachmentsRenderIcons)
 
 	if ($bAttachmentsRenderIcons)
 	{
-		$oAttachmentsRenderer = new IconAttachmentsRenderer($oPage, $oObject);
+		$oAttachmentsRenderer = new IconAttachmentsRenderer($oPage, $oObject, $iTransactionId);
 	}
 	else
 	{
-		$oAttachmentsRenderer = new TableDetailsAttachmentsRenderer($oPage, $oObject);
+		$oAttachmentsRenderer = new TableDetailsAttachmentsRenderer($oPage, $oObject, $iTransactionId);
 	}
 
 	$bIsReadOnlyState = AttachmentPlugIn::IsReadonlyState($oObject, $oObject->GetState(), AttachmentPlugIn::ENUM_GUI_BACKOFFICE);
@@ -68,10 +69,10 @@ function RenderAttachments(ajax_page $oPage, $bAttachmentsRenderIcons)
 
 try
 {
-	require_once(APPROOT.'/application/startup.inc.php');
+	require_once APPROOT.'/application/startup.inc.php';
 //	require_once(APPROOT.'/application/user.preferences.class.inc.php');
-	
-	require_once(APPROOT.'/application/loginwebpage.class.inc.php');
+
+	require_once APPROOT.'/application/loginwebpage.class.inc.php';
 	LoginWebPage::DoLoginEx(null /* any portal */, false);
 	
 	$oPage = new ajax_page("");
@@ -138,12 +139,14 @@ try
 			$bAttachmentsRenderIcons = !appUserPreferences::GetPref('attachements_render_icons', true);
 			appUserPreferences::UnsetPref('attachements_render_icons');
 			appUserPreferences::SetPref('attachements_render_icons', $bAttachmentsRenderIcons);
-			RenderAttachments($oPage, $bAttachmentsRenderIcons);
+			$sTempId = utils::ReadParam('temp_id', '', false, 'transaction_id');
+			RenderAttachments($oPage, $bAttachmentsRenderIcons, $sTempId);
 			break;
 
 		case 'refresh_attachments_render':
+			$sTempId = utils::ReadParam('temp_id', '', false, 'transaction_id');
 			$bAttachmentsRenderIcons = appUserPreferences::GetPref('attachements_render_icons', true);
-			RenderAttachments($oPage, $bAttachmentsRenderIcons);
+			RenderAttachments($oPage, $bAttachmentsRenderIcons, $sTempId);
 			break;
 
 		default:

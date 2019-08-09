@@ -228,9 +228,7 @@ class AttachmentPlugIn implements iApplicationUIExtension, iApplicationObjectExt
 	 * @param \WebPage $oPage
 	 * @param bool $bEditMode
 	 *
-	 * @throws \CoreCannotSaveObjectException
 	 * @throws \CoreException
-	 * @throws \CoreUnexpectedValue
 	 * @throws \MissingQueryArgument
 	 * @throws \MySQLException
 	 * @throws \MySQLHasGoneAwayException
@@ -241,14 +239,15 @@ class AttachmentPlugIn implements iApplicationUIExtension, iApplicationObjectExt
 		// Exit here if the class is not allowed
 		if (!$this->IsTargetObject($oObject)) return;
 
+		$iTransactionId = $oPage->GetTransactionId();
 		$bAttachmentsRenderIcons = appUserPreferences::GetPref('attachements_render_icons', true);
 		if ($bAttachmentsRenderIcons)
 		{
-			$oAttachmentsRenderer = new IconAttachmentsRenderer($oPage, $oObject);
+			$oAttachmentsRenderer = new IconAttachmentsRenderer($oPage, $oObject, $iTransactionId);
 		}
 		else
 		{
-			$oAttachmentsRenderer = new TableDetailsAttachmentsRenderer($oPage, $oObject);
+			$oAttachmentsRenderer = new TableDetailsAttachmentsRenderer($oPage, $oObject, $iTransactionId);
 		}
 
 		if ($this->GetAttachmentsPosition() === 'relations')
@@ -303,6 +302,7 @@ HTML
 
 		$sObjClass = get_class($oObject);
 		$iObjKey = $oObject->GetKey();
+		$sTempId = $oPage->GetTransactionId();
 		$iEditMode = $bEditMode ? 1 : 0;
 		$oPage->add_script(
 			<<<EOF
@@ -311,7 +311,7 @@ HTML
 						var sContentNode = '#AttachmentsContent';
 						$(sContentNode).block();
 						$.post(GetAbsoluteUrlModulesRoot()+'itop-attachments/ajax.attachment.php',
-						   { operation: 'toggle_attachments_render', objclass: '$sObjClass', objkey: $iObjKey, edit_mode: $iEditMode},
+						   { operation: 'toggle_attachments_render', objclass: '$sObjClass', objkey: $iObjKey, temp_id: '$sTempId', edit_mode: $iEditMode},
 						   function(data) {
 							 $(sContentNode).html(data);
 							 $(sContentNode).unblock();
@@ -738,10 +738,11 @@ abstract class AbstractAttachmentsRendering
 	/**
 	 * @param \WebPage $oPage
 	 * @param \DBObject $oObject
+	 * @param int $iTransactionId
 	 *
 	 * @throws \OQLException
 	 */
-	public function __construct(\WebPage $oPage, \DBObject $oObject)
+	public function __construct(\WebPage $oPage, \DBObject $oObject, $iTransactionId)
 	{
 		$this->oObject = $oObject;
 		$this->oPage = $oPage;
@@ -749,7 +750,6 @@ abstract class AbstractAttachmentsRendering
 		$oSearch = DBObjectSearch::FromOQL("SELECT Attachment WHERE item_class = :class AND item_id = :item_id");
 		$this->oAttachmentsSet = new DBObjectSet($oSearch, array(), array('class' => get_class($oObject), 'item_id' => $oObject->GetKey()));
 
-		$iTransactionId = $oPage->GetTransactionId();
 		$sTempId = utils::GetUploadTempId($iTransactionId);
 		$oSearchTemp = DBObjectSearch::FromOQL("SELECT Attachment WHERE temp_id = :temp_id");
 		$this->oTempAttachmentsSet = new DBObjectSet($oSearchTemp, array(), array('temp_id' => $sTempId));
@@ -799,9 +799,6 @@ abstract class AbstractAttachmentsRendering
 		$this->oPage->add_linked_script(utils::GetAbsoluteUrlAppRoot().'js/jquery.iframe-transport.js');
 		$this->oPage->add_linked_script(utils::GetAbsoluteUrlAppRoot().'js/jquery.fileupload.js');
 
-		$sDownloadLink = utils::GetAbsoluteUrlAppRoot().ATTACHMENT_DOWNLOAD_URL;
-
-
 		$this->oPage->add_ready_script(
 			<<< JS
 	function RefreshAttachmentsRender()
@@ -809,7 +806,7 @@ abstract class AbstractAttachmentsRendering
 		var sContentNode = '#AttachmentsContent';
 		$(sContentNode).block();
 		$.post(GetAbsoluteUrlModulesRoot()+'itop-attachments/ajax.attachment.php',
-		   { operation: 'refresh_attachments_render', objclass: '$sClass', objkey: $sId, edit_mode: 1},
+		   { operation: 'refresh_attachments_render', objclass: '$sClass', objkey: $sId, temp_id: '$sTempId', edit_mode: 1},
 		   function(data) {
 			 $(sContentNode).html(data);
 			 $(sContentNode).unblock();
