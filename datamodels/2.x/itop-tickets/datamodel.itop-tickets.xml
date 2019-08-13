@@ -201,60 +201,89 @@
 					<access>public</access>
 					<type>Overload-DBObject</type>
 					<code><![CDATA[
-    public function DBInsertNoReload()
-    {
-		  CMDBSource::Query('START TRANSACTION');
-		  try {
-		      $iKey = parent::DBInsertNoReload();
-		      $this->UpdateNewlyInsertedObject($iKey);
-		  }
-		  catch (Exception $e)
-		  {
-		    CMDBSource::Query('ROLLBACK');
-		    throw new MySQLException('error when creating ticket : '.$e->getMessage(), null, $e);
-		  }
-		  CMDBSource::Query('COMMIT');
+	public function DBInsertNoReload()
+	{
+		CMDBSource::Query('START TRANSACTION');
+		try
+		{
+			$iKey = parent::DBInsertNoReload();
+			$this->DBUpdateNewlyInsertedObject($iKey);
+		}
+		catch (Exception $e)
+		{
+			CMDBSource::Query('ROLLBACK');
+			throw new MySQLException('error when creating Ticket : '.$e->getMessage(), null, $e);
+		}
+		CMDBSource::Query('COMMIT');
 
-		  return $iKey;
-    }
+		return $iKey;
+	}
         ]]></code>
 				</method>
-				<method id="UpdateNewlyInsertedObject">
+				<method id="DBUpdateNewlyInsertedObject">
 					<static>false</static>
 					<access>private</access>
 					<type>Overload-DBObject</type>
 					<code><![CDATA[
-		private function UpdateNewlyInsertedObject($iKey)
+	/**
+	 * @param $iKey
+	 *
+	 * @throws \ArchivedObjectException
+	 * @throws \CoreCannotSaveObjectException
+	 * @throws \CoreException
+	 * @throws \CoreUnexpectedValue
+	 * @throws \MySQLException
+	 * @throws \MySQLHasGoneAwayException
+	 * @throws \OQLException
+	 *
+	 * @since 2.7.0 N°1627
+	 */
+	private function DBUpdateNewlyInsertedObject($iKey)
+	{
+		$this->UpdateObjectAfterInsert($iKey);
+
+		$aAttToUpdate = $this->ListChanges();
+		if (empty($aAttToUpdate))
 		{
-		  $aAttToUpdate = $this->GetDataToUpdateAfterInsert($iKey);
-
-		  $oFilter = new DBObjectSearch(get_class($this));
-		  $oFilter->AddConditionForId($iKey);
-		  $oFilter->AllowAllData();
-
-		  $sSQL = $oFilter->MakeUpdateQuery($aAttToUpdate);
-      CMDBSource::Query($sSQL);
+			return;
 		}
+
+		list($bRes, $aIssues) = $this->CheckToWrite();
+		if (!$bRes)
+		{
+			throw new CoreCannotSaveObjectException(array('issues' => $aIssues, 'class' => get_class($this), 'id' => $this->GetKey()));
+		}
+		$this->SetWarningsAsSessionMessages('update-after-create');
+
+		$oFilter = new DBObjectSearch(get_class($this));
+		$oFilter->AddConditionForId($iKey);
+		$oFilter->AllowAllData();
+
+		$sSQL = $oFilter->MakeUpdateQuery($aAttToUpdate);
+		CMDBSource::Query($sSQL);
+	}
         ]]></code>
 				</method>
-				<method id="GetDataToUpdateAfterInsert">
+				<method id="UpdateObjectAfterInsert">
 					<static>false</static>
 					<access>protected</access>
 					<type>Overload-DBObject</type>
 					<code><![CDATA[
-		/**
-		* @param int $iKey
-		* @return array attcode as key, att value as value
-		*/
-		protected function GetDataToUpdateAfterInsert($iKey)
-		{
-		  $aAttToUpdate = array();
-
+	/**
+	 * When inserting a new object, as the ref field is based on the id field, we need to update it immediately after insert
+	 *
+	 * @param int $iKey
+	 *
+	 * @throws \CoreException
+	 * @throws \CoreUnexpectedValue
+	 *
+	 * @since 2.7.0 N°1627
+	 */
+	protected function UpdateObjectAfterInsert($iKey)
+	{
 		  $sRef = $this->MakeTicketRef($iKey);
-			$aAttToUpdate['ref'] = $sRef;
-
-			return $aAttToUpdate;
-		}
+		  $this->Set('ref', $sRef);
+	}
         ]]></code>
 				</method>
 				<method id="MakeTicketRef">
