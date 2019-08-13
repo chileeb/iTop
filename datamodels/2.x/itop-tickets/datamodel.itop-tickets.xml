@@ -47,6 +47,7 @@
 						<attributes>
 							<attribute id="ref"/>
 						</attributes>
+						<filter><![CDATA[ref != '']]></filter>
 						<is_blocking>false</is_blocking>
 					</rule>
 				</uniqueness_rules>
@@ -202,15 +203,58 @@
 					<code><![CDATA[
     public function DBInsertNoReload()
     {
-          $oMutex = new iTopMutex('ticket_insert');
-          $oMutex->Lock();
-          $iNextId = MetaModel::GetNextKey(get_class($this));
-          $sRef = $this->MakeTicketRef($iNextId);
-          $this->SetIfNull('ref', $sRef);
-          $iKey = parent::DBInsertNoReload();
-          $oMutex->Unlock();
-          return $iKey;
+		  CMDBSource::Query('START TRANSACTION');
+		  try {
+		      $iKey = parent::DBInsertNoReload();
+		      $this->UpdateNewlyInsertedObject($iKey);
+		  }
+		  catch (Exception $e)
+		  {
+		    CMDBSource::Query('ROLLBACK');
+		    throw new MySQLException('error when creating ticket : '.$e->getMessage(), null, $e);
+		  }
+		  CMDBSource::Query('COMMIT');
+
+		  return $iKey;
     }
+        ]]></code>
+				</method>
+				<method id="UpdateNewlyInsertedObject">
+					<static>false</static>
+					<access>private</access>
+					<type>Overload-DBObject</type>
+					<code><![CDATA[
+		private function UpdateNewlyInsertedObject($iKey)
+		{
+		  $aAttToUpdate = $this->GetDataToUpdateAfterInsert($iKey);
+
+		  $oFilter = new DBObjectSearch(get_class($this));
+		  $oFilter->AddConditionForId($iKey);
+		  $oFilter->AllowAllData();
+
+		  $sSQL = $oFilter->MakeUpdateQuery($aAttToUpdate);
+      CMDBSource::Query($sSQL);
+		}
+        ]]></code>
+				</method>
+				<method id="GetDataToUpdateAfterInsert">
+					<static>false</static>
+					<access>protected</access>
+					<type>Overload-DBObject</type>
+					<code><![CDATA[
+		/**
+		* @param int $iKey
+		* @return array attcode as key, att value as value
+		*/
+		protected function GetDataToUpdateAfterInsert($iKey)
+		{
+		  $aAttToUpdate = array();
+
+		  $sRef = $this->MakeTicketRef($iKey);
+			$aAttToUpdate['ref'] = $sRef;
+
+			return $aAttToUpdate;
+		}
         ]]></code>
 				</method>
 				<method id="MakeTicketRef">

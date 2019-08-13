@@ -522,6 +522,16 @@ class DBObjectSearch extends DBSearch
 	}
 
 	/**
+	 * @param int $iId
+	 *
+	 * @throws \CoreException
+	 */
+	public function AddConditionForId($iId)
+	{
+		$this->AddCondition('id', $iId, '=');
+	}
+
+	/**
 	 * @param string $sFilterCode attribute code to use
 	 * @param array $aValues
 	 * @param bool $bPositiveMatch if true will add a IN filter, else a NOT IN

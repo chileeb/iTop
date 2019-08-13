@@ -785,25 +785,25 @@ class CMDBSource
 	}
 
 	/**
+	 * @deprecated 2.7.0 N°1627 in MySQL 8, the table status is cached by default. Will be removed in 2.8.0. Use {@link GetInsertId} instead
+	 *
 	 * @param string $sTable
 	 *
-	 * @return int
 	 * @throws \MySQLException
-	 * @throws \MySQLHasGoneAwayException
 	 */
 	public static function GetNextInsertId($sTable)
 	{
-		$sSQL = "SHOW TABLE STATUS LIKE '$sTable'";
-		$oResult = self::Query($sSQL);
-		$aRow = $oResult->fetch_assoc();
-
-		return $aRow['Auto_increment'];
+		throw new MySQLException('\CMDBSource::GetNextInsertId : this method should not be used anymore', null);
 	}
 
+	/**
+	 * @return int last inserted id
+	 * @uses \mysqli::$insert_id see https://www.php.net/manual/en/mysqli.insert-id.php
+	 */
 	public static function GetInsertId()
 	{
 		$iRes = self::$m_oMysqli->insert_id;
-		if (is_null($iRes))
+		if ($iRes === null)
 		{
 			return 0;
 		}
